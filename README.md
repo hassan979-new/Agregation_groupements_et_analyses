@@ -41,3 +41,66 @@ Les fonctions d’agrégation servent à résumer les données et à mieux compr
 COUNT permet de compter des éléments (emprunts, abonnés, ouvrages).
 AVG sert à calculer des moyennes pour analyser les tendances.
 Avec GROUP BY et HAVING, on peut comparer des groupes et repérer les cas importants.
+# Exercice
+## Un exemple de sortie
+```sql
+WITH
+     
+     time AS (
+         SELECT
+             YEAR(date_debut) AS annee,
+             MONTH(date_debut) AS mois,
+             COUNT(*) AS total_emprunts,
+             COUNT(DISTINCT abonne_id) AS abonnes_actifs,
+             ROUND(COUNT(*) / COUNT(DISTINCT abonne_id), 2) AS moyenne_par_abonne,
+             COUNT(DISTINCT ouvrage_id) AS ouvrages_empruntes
+         FROM emprunt
+         WHERE YEAR(date_debut) = 2025
+         GROUP BY YEAR(date_debut), MONTH(date_debut)
+     ),
+     count AS (
+         SELECT
+             YEAR(date_debut) AS annee,
+             MONTH(date_debut) AS mois,
+             ouvrage_id,
+             COUNT(*) AS nb_emprunts
+         FROM emprunt
+         GROUP BY YEAR(date_debut), MONTH(date_debut), ouvrage_id
+     ),
+     ranked AS (
+         SELECT *, ROW_NUMBER() OVER (PARTITION BY annee, mois ORDER BY nb_emprunts DESC) AS rang
+         FROM count
+     ),
+     top3_titres AS (
+         SELECT
+             r.annee, r.mois,
+             GROUP_CONCAT(o.titre ORDER BY r.nb_emprunts DESC SEPARATOR ', ') AS titres_top3
+         FROM ranked r
+         JOIN ouvrage o ON o.id = r.ouvrage_id
+         WHERE r.rang <= 3
+         GROUP BY r.annee, r.mois
+     ),
+     total_ouvrages AS (
+         SELECT COUNT(*) AS total FROM ouvrage
+     )
+     SELECT
+         s.annee,
+         s.mois,
+         s.total_emprunts,
+         s.abonnes_actifs,
+         s.moyenne_par_abonne,
+         ROUND(s.ouvrages_empruntes * 100 / t.total, 2) AS pct_empruntes,
+         COALESCE(top.titres_top3, '') AS top3_ouvrages
+     FROM time s
+     CROSS JOIN total_ouvrages t
+     LEFT JOIN top3_titres top
+            ON top.annee = s.annee AND top.mois = s.mois
+    ORDER BY s.annee, s.mois;
++-------+------+----------------+----------------+--------------------+---------------+---------------------------+
+| annee | mois | total_emprunts | abonnes_actifs | moyenne_par_abonne | pct_empruntes | top3_ouvrages             |
++-------+------+----------------+----------------+--------------------+---------------+---------------------------+
+|  2025 |    6 |              2 |              2 |               1.00 |         66.67 | Pride and Prejudice, 1984 |
++-------+------+----------------+----------------+--------------------+---------------+---------------------------+
+1 row in set (0.01 sec)
+```
+- <img width="1918" height="636" alt="image" src="https://github.com/user-attachments/assets/b2c2fbee-7211-4d3d-add8-358b1181cb96" />
